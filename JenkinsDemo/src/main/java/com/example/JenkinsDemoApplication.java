@@ -6,18 +6,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 @SpringBootApplication
 public class JenkinsDemoApplication {
 	
-	private String input;
-	
-	public String getInput() {
-		return input;
-	}
-
-	public void setInput(String input) {
-		this.input = "Helloe World";
-	}
-
 	public String message() {
-		String msg = getInput();
+		String msg = "Hello World";
 		return msg;
 	}
 
