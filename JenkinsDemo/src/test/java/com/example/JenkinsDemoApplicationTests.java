@@ -17,6 +17,6 @@ public class JenkinsDemoApplicationTests {
 	@Test
 	public void helloWorldTest() {
 		JenkinsDemoApplication demoApp = new JenkinsDemoApplication();
-		Assert.assertTrue(demoApp.message().equals("Hello World"));
+		Assert.assertEquals("Hello World", demoApp.message());
 	}
 }

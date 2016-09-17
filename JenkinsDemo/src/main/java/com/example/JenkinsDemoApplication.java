@@ -7,7 +7,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class JenkinsDemoApplication {
 	
 	public String message() {
-		return "Hello World";
+		String msg = "Hello World";
+		return msg;
 	}
 
 	public static void main(String[] args) {
