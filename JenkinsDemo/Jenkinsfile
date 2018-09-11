@@ -1,0 +1,129 @@
+library identifier: 'jwt_dev_pcf_provision_slib@master', retriever: modernSCM([$class: 'GitSCMSource',remote: '*** GitHub URL for library ***',credentialsId: 'GITHUB_SCMADM_SSH_KEY'])
+
+GIT_URL           		= '*** GitHub Source URL ***'
+GIT_BRANCH        		= "*/${params.Branch}" 
+GIT_CREDENTIALS   		= 'GITHUB_SCMADM_SSH_KEY' 
+def CF_FOUNDATION_ORG           = '*** Cloud Foundry ORG name ***'
+def isDeployOnly 		= 'true'
+def VAULT_URL_DEV   	= '*** Hashicorp Vault URL ***' 
+def SECRET_PATH_PCF_DEV  = '*** Vault secret path for cloud foundry deployment credentials ***' 
+def ROLE_ID = '*** ROLE ID ***'
+def GLOBAL_SECRETS	  = '*** Vault secret path for nexus credentials ***'
+def CF_FOUNDATION_URL = '*** CLoud Foundry URL ***'
+def VAULT_URL;
+def VAULT_KEYS_PATH;
+def CF_FOUNDATION;
+def CF_FOUNDATION_ORG_SPACE;
+def PCF_USERNAME;
+def PCF_PASSWORD;
+
+								   									   		
+ 		//echo "Sapce---------"
+echo "${CF_FOUNDATION_ORG_SPACE}"
+   						    
+def SECRETS = [ 
+     [ 
+         $class:'VaultSecret', path:"*** Vault secret path for cloud foundry deployment credentials ***", secretValues: 
+         [ 
+             [$class: 'VaultSecretValue', envVar: 'CF_USERNAME', vaultKey: 'username'], 
+             [$class: 'VaultSecretValue', envVar: 'CF_PASSWORD', vaultKey: 'password'] 
+         ] 
+     ], 
+     [ 
+         $class:'VaultSecret', path:"*** Vault secret path for nexus credentials ***", secretValues: 
+         [ 
+             [$class: 'VaultSecretValue', envVar: 'NEXUS_USERNAME', vaultKey: 'username'], 
+             [$class: 'VaultSecretValue', envVar: 'NEXUS_PASSWORD', vaultKey: 'password'], 
+             [$class: 'VaultSecretValue', envVar: 'NEXUS_PUBLIC_REPO_URL', vaultKey: 'publicrepourl'], 
+             [$class: 'VaultSecretValue', envVar: 'NEXUS_RELEASE_REPO_URL', vaultKey: 'releaserepourl'], 
+             [$class: 'VaultSecretValue', envVar: 'NEXUS_SNAPSHOT_REPO_URL', vaultKey: 'snapshotrepourl'] 
+         ] 
+     ]
+ ] 
+ 
+ 
+def checkout() { 
+     checkout([$class: 'GitSCM', branches: [[name: GIT_BRANCH]], doGenerateSubmoduleConfigurations: false, extensions: [], submoduleCfg: [], userRemoteConfigs: [[credentialsId: GIT_CREDENTIALS, url: GIT_URL]]])       
+     
+     echo "Check out complete." 
+     echo "${params.ACTIVE_PROFILE}"      
+ } 
+ 
+ 
+ 
+stage ("Checkout") { 
+     node { 
+         echo "BUILD_NUMBER=${params.RELEASE_VERSION}"            
+         checkout() 
+     } 
+}
+ 
+stage("Prepare Build") { 
+     node { 
+         echo "Building....${params.RELEASE_VERSION}"          
+          
+         wrap([$class:'*** Vault Wrapper Class ***', vaultSecrets: SECRETS, roleId: ROLE_ID, vaultUrl: VAULT_URL_DEV, exposeAuthToken:false, wrap:true]) {
+         
+         if (fileExists('build.gradle')) { 
+         		echo 'build.gradle exists, no need to checkout.' 
+     		 } else { 
+         		echo 'missing build.gradle, checking out...' 
+         	checkout() 
+     		 }
+     		 
+     		 env.NEXUS_GROUP_ID     = '*** nexus group id ***' 
+     		 env.NEXUS_ARTIFACT_ID  = '*** nexus artifact id ***' 
+     		 env.BUILD_VERSION      = "${params.RELEASE_VERSION}"
+			 PCF_USERNAME = "${CF_USERNAME}"
+		    PCF_PASSWORD = "${CF_PASSWORD}"
+     		 
+     		 if("${params.artifactType}" == "SNAPSHOT"){
+     		   env.REPO_URL = "${env.NEXUS_SNAPSHOT_REPO_URL}"
+     		 }else if("${params.artifactType}" == "RELEASE"){
+     		 	  env.REPO_URL = "${env.NEXUS_RELEASE_REPO_URL}"
+     		 }
+           echo "${env.REPO_URL}"   
+           
+				 sh '''
+				    if [ "$artifactType" == "SNAPSHOT" ]; then
+				      VERSION=$SNAPSHOT_VERSION
+				 			IFS='-' read -ra VERSION_ARR <<< "$SNAPSHOT_VERSION" 
+				 			export VERSION_FOLDER="${VERSION_ARR[0]}-SNAPSHOT"
+				 			echo "snap------------------....${VERSION_FOLDER}"
+				 	  else
+				      VERSION=$RELEASE_VERSION
+				 			export VERSION_FOLDER="$RELEASE_VERSION"
+				 			echo "release------------------....${VERSION_FOLDER}"
+				    fi
+				    
+				    BUILD_ARTIFACT_FILENAME="$NEXUS_ARTIFACT_ID-$VERSION.jar" 	
+    		 		
+    		 		echo "$REPO_URL--"
+    		 		echo "$$NEXUS_GROUP_ID"
+    		 		echo "$VERSION_FOLDER"
+    		 		echo "NEXUS_ARTIFACT_ID-$VERSION.jar"
+    		 		    		 
+    				
+				wget "$REPO_URL/$NEXUS_GROUP_ID/$NEXUS_ARTIFACT_ID/$VERSION_FOLDER/$NEXUS_ARTIFACT_ID-$VERSION.jar"
+         
+         		mkdir -p *** nexus artifact id ***/build/libs 
+            
+         		mv $BUILD_ARTIFACT_FILENAME *** nexus artifact id ***/build/libs/$NEXUS_ARTIFACT_ID-$VERSION_FOLDER.jar
+				    
+			   ./gradlew cfPush -PisDeployOnly="true" -PartifactType="$artifactType" -PreleaseVersion="$VERSION_FOLDER" -PsnapshotVersion="$VERSION_FOLDER" -PnexusPublicRepoURL="$NEXUS_PUBLIC_REPO_URL" -PcfUsername="$CF_USERNAME" -PcfPassword="$CF_PASSWORD" -PnexusUsername="$NEXUS_USERNAME" -PnexusPassword="$NEXUS_PASSWORD" -PnexusSnapshotRepoURL="$NEXUS_SNAPSHOT_REPO_URL" -PnexusReleaseRepoURL="$NEXUS_RELEASE_REPO_URL" -PactiveProfile="$ACTIVE_PROFILE" -PapiSecret="$apiSecret" -PconsumerAppCertificate="$consumerAppCertificate"
+           
+			 '''           	         
+				    
+        } //end wrap 
+    } //end node 
+}
+
+stage('PCF JWT  Provision'){
+	node {
+		echo "DEPLOY JWT Secrets"
+		wrap([$class:'*** Vault Wrapper Class ***', vaultSecrets: SECRETS, roleId: ROLE_ID, vaultUrl: VAULT_URL_DEV, exposeAuthToken:false, wrap:true]) {
+		jwtDevPcfProvision ( [apikey:"${apiKey}", username:"${userName}",  password:"${password}", pcfAppName:"${pcfAppName}", pcfOrg:"${pcfOrg}", pcfApiEndpoint:"${pcfApiEndpoint}", pcfSpace:"${ACTIVE_PROFILE}",pcfUsername:"${CF_USERNAME}", pcfPassword:"${CF_PASSWORD}"] );
+		}
+	}
+}
+
