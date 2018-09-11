@@ -1,0 +1,35 @@
+// This script pulls the metadata information for the specified artifact from nexus and creates an array list (with the version information) and returns the same (which will be populated in a drop down from which user can select a version)
+
+def repoURL = "*** Nexus URL ***"
+def group_id = "*** Nexus group id ***"
+def artifact_id = "*** Nexus artifact id ***"
+
+def metadataUrl = repoURL + "/" + group_id + "/" + artifact_id + "/" + "maven-metadata.xml"
+
+// Get the metadata xml
+def metadata = new URL(metadataUrl).getText()
+
+// Parse the returned meta data xml
+def response = new XmlSlurper().parseText(metadata)
+
+// Retrieve the version information from the returned XML
+def versionsList = []
+def versions = response.versioning.versions.version
+
+// Add the versions in to a list
+for(int i=0;i<versions.size();i++) {
+      def versionUrl = repoURL + "/" + group_id + "/" + artifact_id + "/" + versions[i] + "/" + "maven-metadata.xml"
+      def versionMetadata = new URL(versionUrl).getText()
+      def versionResponse = new XmlSlurper().parseText(versionMetadata)
+      def fileName = new StringBuffer()
+                                           .append(versions[i].toString().substring(0, versions[i].toString().indexOf("-SNAPSHOT")))
+                                           .append("-")
+                                           .append(versionResponse.versioning.snapshot.timestamp)
+                                           .append("-")
+                                           .append(versionResponse.versioning.snapshot.buildNumber)
+
+       versionsList.add(fileName.toString())
+}
+
+// Return the list to be displayed in the VERSION drop down
+return versionsList
